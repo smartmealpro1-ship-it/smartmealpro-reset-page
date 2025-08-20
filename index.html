@@ -14,7 +14,7 @@
         }
 
         body {
-            background-color: #f5f8ff;
+            background-color: #fff5eb;
             color: #333;
             display: flex;
             justify-content: center;
@@ -36,7 +36,7 @@
         .logo-placeholder {
             width: 80px;
             height: 80px;
-            background-color: #1e88e5;
+            background-color: #ff8c00;
             border-radius: 50%;
             margin: 0 auto 20px;
             display: flex;
@@ -48,7 +48,7 @@
         }
 
         h1 {
-            color: #1e88e5;
+            color: #ff8c00;
             margin-bottom: 10px;
             font-size: 24px;
         }
@@ -83,7 +83,7 @@
         }
 
         input:focus {
-            border-color: #1e88e5;
+            border-color: #ff8c00;
             outline: none;
         }
 
@@ -94,7 +94,7 @@
         }
 
         button {
-            background-color: #1e88e5;
+            background-color: #ff8c00;
             color: white;
             border: none;
             border-radius: 6px;
@@ -107,7 +107,7 @@
         }
 
         button:hover {
-            background-color: #1976d2;
+            background-color: #e67e00;
         }
 
         button:disabled {
@@ -162,7 +162,7 @@
 </head>
 <body>
     <div class="container">
-        <div class="logo-placeholder">App</div>
+        <div class="logo-placeholder">🍽️ SmartMealPro</div>
         <h1>Reset Your Password</h1>
         <p>Please enter your new password below to reset your account.</p>
         
@@ -173,7 +173,12 @@
             <div class="form-group">
                 <label for="new-password">New Password</label>
                 <input type="password" id="new-password" placeholder="Enter new password" required>
-                <div class="password-requirements">Minimum 6 characters</div>
+                <div class="password-requirements">
+                    Password requirements:<br>
+                    - At least 8 characters long<br>
+                    - Contains uppercase and lowercase letters<br>
+                    - Contains at least one number
+                </div>
             </div>
             
             <div class="form-group">
@@ -410,7 +415,7 @@
                  submitButton.textContent = 'Verify Code';
                  submitButton.style.width = '100%';
                  submitButton.style.padding = '14px 20px';
-                 submitButton.style.backgroundColor = '#1e88e5';
+                 submitButton.style.backgroundColor = '#ff8c00';
                  submitButton.style.color = 'white';
                  submitButton.style.border = 'none';
                  submitButton.style.borderRadius = '6px';
@@ -490,11 +495,7 @@
             
             // Function to add a link to request a new password reset
             function addRequestNewLinkOption() {
-                const backToLogin = document.createElement('p');
-                backToLogin.innerHTML = '<a href="https://smartmealpro1-ship-it.github.io/smartmealpro/">Back to login</a>';
-                backToLogin.style.marginTop = '20px';
-                backToLogin.style.textAlign = 'center';
-                document.querySelector('.container').appendChild(backToLogin);
+                // Back to login button removed as requested
             }
 
             // Form submission
