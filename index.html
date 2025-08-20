@@ -190,21 +190,30 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
             // Configuration with actual Supabase values
-            const SUPABASE_URL = 'https://pgyyvqmsirulpytbffzu.supabase.co';
+            const SUPABASE_URL = 'https://pgyvqmsirulpytbfrfzu.supabase.co';
             const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBneXZxbXNpcnVscHl0YmZyZnp1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM1ODIzMDUsImV4cCI6MjA2OTE1ODMwNX0.iHbpMvgMn0ngpILC31mB233OrKqDmt54YtoVnsw3kw8';
 
             // Initialize Supabase client
             let supabaseClient;
             
             // Only initialize if not using placeholder values
-            if (SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY') {
-                const { createClient } = supabase;
-                supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-            } else {
-                // For preview/template purposes only
-                console.log('Using placeholder Supabase credentials. Replace with actual values before deployment.');
+            try {
+                if (SUPABASE_URL !== 'YOUR_SUPABASE_URL' && SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY') {
+                    const { createClient } = supabase;
+                    supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    console.log('Supabase client initialized successfully');
+                } else {
+                    // For preview/template purposes only
+                    console.log('Using placeholder Supabase credentials. Replace with actual values before deployment.');
+                }
+            } catch (error) {
+                console.error('Error initializing Supabase client:', error);
+                showError('Failed to initialize authentication. Please try again later.');
+                disableForm();
+                addRequestNewLinkOption();
+                return;
             }
 
             // DOM elements
@@ -217,15 +226,275 @@
             const errorMessage = document.getElementById('error-message');
             const successMessage = document.getElementById('success-message');
 
-            // Extract token from URL
-            const params = new URLSearchParams(window.location.search);
-            const resetToken = params.get('token');
-
-            // Check if token exists
-            if (!resetToken) {
-                showError('Invalid or missing reset token. Please check your email link and try again.');
+            // Extract and process tokens from URL
+            let isRecovery = false;
+            let tokenValidated = false;
+            
+            try {
+                 // Extract tokens from URL (both hash fragments and query parameters)
+                 let accessToken, refreshToken, tokenHash, tokenType, expiresIn, token;
+                 
+                 console.log('Starting token extraction process');
+                 
+                 // Check URL hash fragments first (#access_token=xxx&...)
+                 if (window.location.hash) {
+                     const hashParams = new URLSearchParams(window.location.hash.substring(1));
+                     accessToken = hashParams.get('access_token');
+                     refreshToken = hashParams.get('refresh_token');
+                     tokenType = hashParams.get('type');
+                     expiresIn = hashParams.get('expires_in');
+                     tokenHash = hashParams.get('token_hash'); // Sometimes token_hash can be in hash fragment
+                     
+                     console.log('URL hash:', window.location.hash);
+                     console.log('Hash parameters:', Object.fromEntries(hashParams.entries()));
+                     console.log('Hash parameters found:', !!window.location.hash);
+                     
+                     // CASE 1: We have access_token and refresh_token in the hash
+                     if (accessToken && refreshToken) {
+                         // If type is not specified but we have tokens, assume it's recovery
+                         if (!tokenType) {
+                             tokenType = 'recovery';
+                             console.log('Type not specified, assuming recovery type');
+                         }
+                         
+                         if (tokenType === 'recovery') {
+                             isRecovery = true;
+                             console.log('Found recovery tokens in URL hash');
+                             
+                             try {
+                                 console.log('Attempting to set session with access_token and refresh_token');
+                                 // Set the session with Supabase
+                                 const { data, error } = await supabaseClient.auth.setSession({
+                                     access_token: accessToken,
+                                     refresh_token: refreshToken
+                                 });
+                                 
+                                 if (error) {
+                                     console.error('Error setting session:', error);
+                                     throw new Error('Invalid or expired reset token');
+                                 }
+                                 
+                                 console.log('Session set successfully with tokens from hash');
+                                 tokenValidated = true;
+                             } catch (sessionError) {
+                                 console.error('Session error:', sessionError);
+                                 console.log('Will try alternative token validation methods');
+                                 // Continue to try other methods if session setting fails
+                             }
+                         }
+                     }
+                 } else {
+                     console.log('No hash parameters found in URL');
+                 }
+                 
+                 // If not found in hash or not validated, check query parameters (?token_hash=xxx&...)
+                 if (!isRecovery || !tokenValidated) {
+                     console.log('Checking query parameters for tokens');
+                     const queryParams = new URLSearchParams(window.location.search);
+                     if (!tokenHash) tokenHash = queryParams.get('token_hash');
+                     if (!tokenType) tokenType = queryParams.get('type');
+                     token = queryParams.get('token'); // Direct token parameter
+                     
+                     console.log('URL query:', window.location.search);
+                     console.log('Query parameters:', Object.fromEntries(queryParams.entries()));
+                     console.log('Query parameters found:', !!window.location.search);
+                     console.log('Token hash from query:', tokenHash);
+                     console.log('Token type from query:', tokenType);
+                     console.log('Direct token from query:', token ? 'present' : 'missing');
+                     
+                     // CASE 2: We have token_hash in the query parameters
+                     if (tokenHash) {
+                         // If type is not specified but we have token_hash, assume it's recovery
+                         if (!tokenType) {
+                             tokenType = 'recovery';
+                             console.log('Type not specified with token_hash, assuming recovery type');
+                         }
+                         
+                         if (tokenType === 'recovery') {
+                             isRecovery = true;
+                             console.log('Found token_hash for recovery');
+                             
+                             try {
+                                 console.log('Attempting to verify OTP with token_hash');
+                                 // Verify the OTP token hash
+                                 const { data, error } = await supabaseClient.auth.verifyOtp({
+                                     token_hash: tokenHash,
+                                     type: 'recovery'
+                                 });
+                                 
+                                 if (error) {
+                                     console.error('Error verifying token_hash:', error);
+                                     throw new Error('Invalid or expired reset token');
+                                 }
+                                 
+                                 console.log('Token hash verified successfully');
+                                 tokenValidated = true;
+                             } catch (otpError) {
+                                 console.error('OTP verification error:', otpError);
+                                 console.log('Will try alternative token validation methods');
+                                 // Continue to try other methods if OTP verification fails
+                             }
+                         }
+                     } else {
+                         console.log('No token_hash found in query parameters');
+                     }
+                     
+                     // CASE 3: We have a direct token parameter (fallback for OTP flow)
+                     if (!tokenValidated && token) {
+                         console.log('Found direct token parameter, will use OTP form');
+                         console.log('Token length:', token.length);
+                         // We'll handle this in the OTP form
+                         // Don't set isRecovery here as we want to show the OTP form
+                     }
+                 }
+                 
+                 // Log extracted tokens for debugging (remove in production)
+                 console.log('Final token state:', { 
+                     accessToken: accessToken ? 'present' : 'missing', 
+                     refreshToken: refreshToken ? 'present' : 'missing',
+                     tokenHash: tokenHash ? 'present' : 'missing',
+                     token: token ? 'present' : 'missing',
+                     tokenType,
+                     isRecovery,
+                     tokenValidated
+                 });
+                 console.log('Token validation process completed');
+            } catch (error) {
+                console.error('Error processing tokens:', error);
+                showError(error.message || 'Invalid or missing reset token. Please check your email link and try again.');
                 disableForm();
+                addRequestNewLinkOption();
                 return;
+            }
+            
+            // Check if valid recovery tokens exist and were validated
+            if (!isRecovery || !tokenValidated) {
+                console.log('No valid recovery tokens found, showing OTP form');
+                showOtpForm();
+                return;
+            }
+             
+             // Function to show OTP input form
+             function showOtpForm() {
+                 // Hide the password reset form
+                 resetForm.style.display = 'none';
+                 
+                 // Create OTP form
+                 const otpForm = document.createElement('form');
+                 otpForm.id = 'otp-form';
+                 
+                 // Create heading
+                 const heading = document.createElement('h2');
+                 heading.textContent = 'Enter Recovery Code';
+                 heading.style.marginBottom = '15px';
+                 
+                 // Create description
+                 const description = document.createElement('p');
+                 description.textContent = 'Please enter the 6-digit recovery code from your email.';
+                 
+                 // Create input field
+                 const otpInput = document.createElement('input');
+                 otpInput.type = 'text';
+                 otpInput.placeholder = 'Enter 6-digit code';
+                 otpInput.maxLength = 6;
+                 otpInput.style.width = '100%';
+                 otpInput.style.padding = '12px 15px';
+                 otpInput.style.marginBottom = '20px';
+                 otpInput.style.marginTop = '20px';
+                 otpInput.style.borderRadius = '6px';
+                 otpInput.style.border = '1px solid #ddd';
+                 
+                 // Create submit button
+                 const submitButton = document.createElement('button');
+                 submitButton.type = 'submit';
+                 submitButton.textContent = 'Verify Code';
+                 submitButton.style.width = '100%';
+                 submitButton.style.padding = '14px 20px';
+                 submitButton.style.backgroundColor = '#1e88e5';
+                 submitButton.style.color = 'white';
+                 submitButton.style.border = 'none';
+                 submitButton.style.borderRadius = '6px';
+                 submitButton.style.cursor = 'pointer';
+                 
+                 // Create error message div
+                 const otpError = document.createElement('div');
+                 otpError.id = 'otp-error';
+                 otpError.className = 'message error';
+                 otpError.style.display = 'none';
+                 otpError.style.marginBottom = '20px';
+                 
+                 // Add elements to form
+                 otpForm.appendChild(heading);
+                 otpForm.appendChild(description);
+                 otpForm.appendChild(otpError);
+                 otpForm.appendChild(otpInput);
+                 otpForm.appendChild(submitButton);
+                 
+                 // Add form to container
+                 document.querySelector('.container').appendChild(otpForm);
+                 
+                 // Add event listener to form
+                 otpForm.addEventListener('submit', async function(e) {
+                     e.preventDefault();
+                     
+                     const otp = otpInput.value.trim();
+                     
+                     // Validate OTP
+                     if (!otp || otp.length !== 6 || !/^\d+$/.test(otp)) {
+                         otpError.textContent = 'Please enter a valid 6-digit code.';
+                         otpError.style.display = 'block';
+                         return;
+                     }
+                     
+                     // Hide error message
+                     otpError.style.display = 'none';
+                     
+                     // Disable button and show loading state
+                     submitButton.disabled = true;
+                     submitButton.textContent = 'Verifying...';
+                     
+                     try {
+                        // Verify OTP with Supabase
+                        const { data, error } = await supabaseClient.auth.verifyOtp({
+                            token: otp,
+                            type: 'recovery'
+                        });
+                        
+                        if (error) {
+                            throw error;
+                        }
+                        
+                        console.log('OTP verified successfully');
+                        
+                        // Show password reset form if successful
+                        otpForm.style.display = 'none';
+                        resetForm.style.display = 'block';
+                        
+                        // Set tokenValidated flag
+                        tokenValidated = true;
+                         
+                     } catch (error) {
+                         console.error('Error verifying OTP:', error);
+                         otpError.textContent = error.message || 'Invalid recovery code. Please try again.';
+                         otpError.style.display = 'block';
+                         
+                         // Reset button
+                         submitButton.disabled = false;
+                         submitButton.textContent = 'Verify Code';
+                     }
+                 });
+                 
+                 // Add link to go back to login
+                 addRequestNewLinkOption();
+             }
+            
+            // Function to add a link to request a new password reset
+            function addRequestNewLinkOption() {
+                const backToLogin = document.createElement('p');
+                backToLogin.innerHTML = '<a href="https://smartmealpro1-ship-it.github.io/smartmealpro/">Back to login</a>';
+                backToLogin.style.marginTop = '20px';
+                backToLogin.style.textAlign = 'center';
+                document.querySelector('.container').appendChild(backToLogin);
             }
 
             // Form submission
@@ -264,10 +533,9 @@
                     }
                     
                     // Update password with Supabase
+                    // Note: We don't need to pass accessToken as it's already in the session
                     const { error } = await supabaseClient.auth.updateUser({
                         password: newPassword
-                    }, {
-                        accessToken: resetToken
                     });
                     
                     if (error) {
@@ -277,9 +545,26 @@
                     // Show success message
                     showSuccess('Password reset successful!');
                     
-                    // Show popup after 1 second
+                    // Show popup after 1 second and implement app redirection
                     setTimeout(function() {
                         alert('Password updated successfully!');
+                        
+                        try {
+                            // Try mobile app deep link first
+                            window.location.href = 'smartmealpro://reset-success';
+                            
+                            // Fallback: If after 1 second we're still on this page, redirect to web app
+                            setTimeout(function() {
+                                if (document.hasFocus()) {
+                                    // The deep link didn't work, redirect to web app login
+                                    window.location.href = 'https://smartmealpro1-ship-it.github.io/smartmealpro/';
+                                }
+                            }, 1000);
+                        } catch (e) {
+                            console.error('Redirection error:', e);
+                            // Fallback to web app if any error occurs
+                            window.location.href = 'https://smartmealpro1-ship-it.github.io/smartmealpro/';
+                        }
                     }, 1000);
                     
                 } catch (error) {
@@ -340,6 +625,18 @@
                 newPasswordInput.disabled = true;
                 confirmPasswordInput.disabled = true;
                 submitButton.disabled = true;
+                
+                // Add a message with a link to request a new reset link
+                const requestNewLink = document.createElement('p');
+                requestNewLink.innerHTML = 'Need a new reset link? <a href="#" id="request-new-link">Click here</a> to request one.';
+                requestNewLink.style.marginTop = '20px';
+                resetForm.appendChild(requestNewLink);
+                
+                // Add event listener to the new link
+                document.getElementById('request-new-link').addEventListener('click', function(e) {
+                    e.preventDefault();
+                    window.location.href = 'https://smartmealpro1-ship-it.github.io/smartmealpro/'; // Replace with your login page URL
+                });
             }
         });
     </script>
